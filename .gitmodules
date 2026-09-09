@@ -1,0 +1,3 @@
+[submodule "ferric-k"]
+	path = ferric-k
+	url = https://github.com/fkm-X3/ferric-k.git

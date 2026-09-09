@@ -1,0 +1,12 @@
+[package]
+name = "Ferric-OS"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[workspace]
+members = [
+    "ferric-k",
+    # ferric-u will go here when its created
+]
