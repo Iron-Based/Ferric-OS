@@ -29,6 +29,8 @@ pub mod framebuffer;
 #[cfg(all(not(test), any(target_arch = "x86_64", target_arch = "aarch64")))]
 pub mod gui;
 pub mod heap;
+#[cfg(all(not(test), any(target_arch = "x86_64", target_arch = "aarch64")))]
+pub mod keyboard;
 pub mod limine;
 pub mod log;
 #[cfg(all(not(test), any(target_arch = "x86_64", target_arch = "aarch64")))]

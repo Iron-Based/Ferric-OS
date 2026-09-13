@@ -18,6 +18,11 @@ const SLINT_MARKER: &str = "SLINT OK";
 const GUI_EXIT_MARKER: &str = "GUI EXIT OK";
 const MONITOR_MARKER: &str = "MONITOR OK";
 const MONITOR_EXIT_MARKER: &str = "MONITOR EXIT OK";
+const KEYBOARD_OK_MARKER: &str = "KEYBOARD OK";
+const KEYBOARD_TEXT_AB_MARKER: &str = "KEYBOARD TEXT ab\n";
+const KEYBOARD_SEL_MARKER: &str = "KEYBOARD SEL 0 1\n";
+const KEYBOARD_TEXT_TAPPED_MARKER: &str = "KEYBOARD TEXT ab1";
+const KEYBOARD_EXIT_MARKER: &str = "KEYBOARD EXIT OK";
 /// Stall watchdog for the smoke driver: re-sends a command whose effect has
 /// not shown up on serial within this window (a dropped key under a loaded
 /// runner would otherwise wedge the smoke forever).
@@ -32,16 +37,40 @@ const UPTIME_RESPONSE_MARKER: &str = "Uptime:";
 /// Marker the `halt` command prints before powering the machine off.
 const HALT_RESPONSE_MARKER: &str = "HALT";
 
-/// Command script the smoke drives: each step waits for its marker on serial,
-/// then types the next command (commands carry their own Enter key). The
-/// monitor round-trip mirrors the GUI one; its exit marker is distinct so the
-/// script cannot advance on the GUI's stale exit line.
-const SCRIPT: &[(&str, &str)] = &[
+/// Command script the x86_64 smoke drives: each step waits for its marker on
+/// serial, then types the next command (commands carry their own Enter key;
+/// `[right]` is a named arrow key). The keyboard round-trip mirrors the GUI and
+/// monitor ones; its exit marker is distinct so the script cannot advance on a
+/// stale exit line. Only x86_64 can send arrow keys, so the stub-pointer tap
+/// step (`[right]` → `\r`) lives here, not in the aarch64 script.
+const X64_SCRIPT: &[(&str, &str)] = &[
     (CONSOLE_MARKER, "gui\r"),
     (SLINT_MARKER, "\x1B"),
     (GUI_EXIT_MARKER, "monitor\r"),
     (MONITOR_MARKER, "\x1B"),
-    (MONITOR_EXIT_MARKER, "help\r"),
+    (MONITOR_EXIT_MARKER, "keyboard\r"),
+    (KEYBOARD_OK_MARKER, "ab"),
+    (KEYBOARD_TEXT_AB_MARKER, "[right]"),
+    (KEYBOARD_SEL_MARKER, "\r"),
+    (KEYBOARD_TEXT_TAPPED_MARKER, "\x1B"),
+    (KEYBOARD_EXIT_MARKER, "help\r"),
+    (HELP_RESPONSE_MARKER, "xyz\r"),
+    (UNKNOWN_RESPONSE_MARKER, "uptime\r"),
+    (UPTIME_RESPONSE_MARKER, "halt\r"),
+];
+
+/// Command script the aarch64 smoke drives. aarch64 input is raw PL011 serial
+/// bytes, which cannot express arrows, so the stub-pointer tap can't be shown;
+/// the physical keys still drive the keyboard and type into the `TextInput`.
+const ARM64_SCRIPT: &[(&str, &str)] = &[
+    (CONSOLE_MARKER, "gui\r"),
+    (SLINT_MARKER, "\x1B"),
+    (GUI_EXIT_MARKER, "monitor\r"),
+    (MONITOR_MARKER, "\x1B"),
+    (MONITOR_EXIT_MARKER, "keyboard\r"),
+    (KEYBOARD_OK_MARKER, "ab"),
+    (KEYBOARD_TEXT_AB_MARKER, "\x1B"),
+    (KEYBOARD_EXIT_MARKER, "help\r"),
     (HELP_RESPONSE_MARKER, "xyz\r"),
     (UNKNOWN_RESPONSE_MARKER, "uptime\r"),
     (UPTIME_RESPONSE_MARKER, "halt\r"),
@@ -241,7 +270,7 @@ pub fn run(repo_root: &Path, args: RunArgs) -> Result<(), String> {
         steps::note("image missing, building it");
         let img_args = image::ImageArgs {
             image_path: image_path.display().to_string(),
-            size_mb: 64,
+            size_mb: 160,
         };
         image::run(repo_root, img_args)?;
     }
@@ -289,9 +318,14 @@ pub fn run(repo_root: &Path, args: RunArgs) -> Result<(), String> {
         .map_err(|e| format!("failed to spawn {qemu}: {e}"))?;
 
     let deadline = std::time::Instant::now() + Duration::from_secs(args.smoke_timeout_sec);
-    let status = run_with_injection(&mut child, &spec, &stdout_log, deadline)?;
+    let script: &[(&str, &str)] = if args.arch == "x64" {
+        X64_SCRIPT
+    } else {
+        ARM64_SCRIPT
+    };
+    let status = run_with_injection(&mut child, &spec, &stdout_log, deadline, script)?;
 
-    assert_smoke(status.code().unwrap_or(-1), spec.expected_exit, &stdout_log)
+    assert_smoke(status.code().unwrap_or(-1), spec.expected_exit, &stdout_log, &args.arch)
 }
 
 /// Waits for the child to boot, then drives the command script down the
@@ -303,6 +337,7 @@ fn run_with_injection(
     spec: &MachineSpec,
     stdout_log: &Path,
     deadline: std::time::Instant,
+    script: &[(&str, &str)],
 ) -> Result<ExitStatus, String> {
     let (mut qmp, mut write_side, reader) = if let Some(port) = spec.qmp_port {
         // x86_64: drive HMP over QMP and `sendkey`, exactly as a real
@@ -326,10 +361,10 @@ fn run_with_injection(
     let mut typed_at = std::time::Instant::now();
     let mut attempts = 0u32;
     let status = wait_for_exit(child, deadline, stdout_log, |_child| {
-        if step >= SCRIPT.len() {
+        if step >= script.len() {
             return Ok(true);
         }
-        let (prereq, command) = SCRIPT[step];
+        let (prereq, command) = script[step];
         if !log_has_marker(stdout_log, prereq) {
             return Ok(false);
         }
@@ -340,14 +375,14 @@ fn run_with_injection(
             attempts = 1;
             return Ok(false);
         }
-        if SCRIPT
+        if script
             .get(step + 1)
             .is_some_and(|(next, _)| log_has_marker(stdout_log, next))
         {
             step += 1;
             typed = false;
             attempts = 0;
-            return Ok(step >= SCRIPT.len());
+            return Ok(step >= script.len());
         }
         // Step 0 (gui\r) is never re-sent: a second launch while one is
         // starting is worse than a stall.
@@ -370,6 +405,26 @@ fn run_with_injection(
     status
 }
 
+/// Splits a command into injection tokens: `[name]` becomes one named key
+/// (`[right]` → the right arrow), everything else one character. Frees the
+/// script from HMP keysym spellings while keeping the old `\r`/`\x1B` steps.
+fn input_tokens<'a>(command: &'a str) -> Vec<&'a str> {
+    let mut tokens = Vec::new();
+    let mut rest = command;
+    while let Some(first) = rest.chars().next() {
+        if first == '[' {
+            if let Some(end) = rest.find(']') {
+                tokens.push(&rest[1..end]);
+                rest = &rest[end + 1..];
+                continue;
+            }
+        }
+        tokens.push(&rest[..first.len_utf8()]);
+        rest = &rest[first.len_utf8()..];
+    }
+    tokens
+}
+
 /// Types `command` down the active input channel, pacing keystrokes so the
 /// arch controller/FIFO can drain between keys.
 fn send_input(
@@ -378,24 +433,26 @@ fn send_input(
     command: &str,
 ) -> Result<(), String> {
     if let Some(qmp) = qmp {
-        for c in command.chars() {
-            let hmp = match c {
-                '\r' => "sendkey ret".to_string(),
-                ' ' => "sendkey spc".to_string(),
-                '\x1B' => "sendkey esc".to_string(),
-                _ => format!("sendkey {c}"),
+        for token in input_tokens(command) {
+            let hmp = match token {
+                "\r" => "ret",
+                " " => "spc",
+                "\x1B" => "esc",
+                t => t,
             };
-            qmp.human_monitor_command(&hmp)?;
+            qmp.human_monitor_command(&format!("sendkey {hmp}"))?;
             std::thread::sleep(Duration::from_millis(20));
         }
     } else if let Some(stream) = serial {
         // PL011 has a 16-byte RX FIFO; small chunks with sleeps keep the
         // polled write from overflowing while the guest drains each byte.
-        for chunk in command.as_bytes().chunks(4) {
-            stream
-                .write_all(chunk)
-                .map_err(|e| format!("writing command to serial: {e}"))?;
-            std::thread::sleep(Duration::from_millis(25));
+        for token in input_tokens(command) {
+            for chunk in token.as_bytes().chunks(4) {
+                stream
+                    .write_all(chunk)
+                    .map_err(|e| format!("writing command to serial: {e}"))?;
+                std::thread::sleep(Duration::from_millis(25));
+            }
         }
     } else {
         return Err("smoke mode requires an input-injection channel".into());
@@ -435,7 +492,7 @@ fn wait_for_exit(
 
 fn log_has_marker(log: &Path, marker: &str) -> bool {
     std::fs::read_to_string(log)
-        .map(|content| content.contains(marker))
+        .map(|content| content.replace("\r\n", "\n").contains(marker))
         .unwrap_or(false)
 }
 
@@ -495,9 +552,13 @@ fn spawn_serial_reader(stream: TcpStream, log: &Path) -> Result<JoinHandle<()>, 
     }))
 }
 
-fn assert_smoke(code: i32, expected: i32, stdout_log: &Path) -> Result<(), String> {
-    let serial = std::fs::read_to_string(stdout_log).unwrap_or_default();
-    for marker in [
+fn assert_smoke(code: i32, expected: i32, stdout_log: &Path, arch: &str) -> Result<(), String> {
+    let serial = std::fs::read_to_string(stdout_log)
+        .unwrap_or_default()
+        // QEMU's stdio chardev maps LF to CRLF when stdout is a file on
+        // Windows; marker constants embed "\n", so normalize like log_has_marker.
+        .replace("\r\n", "\n");
+    let mut markers = vec![
         BOOT_MARKER,
         FRAMEBUFFER_MARKER,
         CONSOLE_MARKER,
@@ -505,11 +566,20 @@ fn assert_smoke(code: i32, expected: i32, stdout_log: &Path) -> Result<(), Strin
         GUI_EXIT_MARKER,
         MONITOR_MARKER,
         MONITOR_EXIT_MARKER,
+        KEYBOARD_OK_MARKER,
+        KEYBOARD_TEXT_AB_MARKER,
+        KEYBOARD_EXIT_MARKER,
         HELP_RESPONSE_MARKER,
         UNKNOWN_RESPONSE_MARKER,
         UPTIME_RESPONSE_MARKER,
         HALT_RESPONSE_MARKER,
-    ] {
+    ];
+    if arch == "x64" {
+        // Only the PS/2 path can send arrows, so only x86_64 shows the
+        // stub-pointer tap (selection move + synthesized click).
+        markers.extend([KEYBOARD_SEL_MARKER, KEYBOARD_TEXT_TAPPED_MARKER]);
+    }
+    for marker in markers {
         if !serial.contains(marker) {
             return Err(format!(
                 "serial log lacks '{marker}' marker. Serial tail:\n{}",
@@ -524,7 +594,7 @@ fn assert_smoke(code: i32, expected: i32, stdout_log: &Path) -> Result<(), Strin
         ));
     }
     steps::ok(&format!(
-        "serial banners + GUI round-trip + monitor round-trip + shell commands (help/unknown/uptime/halt) dispatched + clean exit code {code}"
+        "serial banners + GUI round-trip + monitor round-trip + keyboard round-trip (physical keys + stub-pointer tap) + shell commands (help/unknown/uptime/halt) dispatched + clean exit code {code}"
     ));
     println!("SMOKE PASSED");
     Ok(())

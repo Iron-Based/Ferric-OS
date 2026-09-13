@@ -433,6 +433,7 @@ fn run_command(line: &[char]) {
             println!("  clock    open the graphical clock window");
             println!("  gui      launch the Slint GUI");
             println!("  monitor  live hardware monitor");
+            println!("  keyboard  on-screen keyboard (stub pointer)");
             println!("  halt     power off the machine");
         }
         Command::Clear => CONSOLE.lock().clear_screen(),
@@ -465,6 +466,10 @@ fn run_command(line: &[char]) {
         }
         Command::Monitor => {
             crate::monitor::run_monitor();
+            CONSOLE.lock().render_now();
+        }
+        Command::Keyboard => {
+            crate::keyboard::run_keyboard();
             CONSOLE.lock().render_now();
         }
         Command::Halt => {

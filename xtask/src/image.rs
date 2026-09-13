@@ -17,7 +17,7 @@ pub struct ImageArgs {
     #[arg(long, default_value = "build/ferric.img")]
     pub image_path: String,
     /// Image size in MiB.
-    #[arg(long, default_value_t = 64)]
+    #[arg(long, default_value_t = 160)]
     pub size_mb: u32,
 }
 

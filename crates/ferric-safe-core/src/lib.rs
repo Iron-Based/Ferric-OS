@@ -7,6 +7,7 @@
 pub mod clock_app;
 pub mod font;
 pub mod grid;
+pub mod keyboard;
 pub mod line_editor;
 pub mod log;
 pub mod monitor;
@@ -17,6 +18,7 @@ pub mod terminal;
 pub use ferric_api::{Key, KeyEvent, Rgb};
 pub use font::Font;
 pub use grid::{Cell, GlyphStyle, Surface, TextGrid};
+pub use keyboard::KeyboardModel;
 pub use line_editor::{LineAction, LineEditor, MAX_LINE_CHARS};
 pub use monitor::{DisplayInfo, MemorySummary, MonitorModel, RegionView};
 pub use scancodes::ScancodeDecoder;

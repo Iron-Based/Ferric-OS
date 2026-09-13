@@ -245,7 +245,7 @@ pub fn map_key_event(event: KeyEvent) -> Option<WindowEvent> {
 
 /// Converts a kernel key to its Slint `SharedString` representation. Plain
 /// characters pass through as their glyph; control keys use Slint's `Key`.
-fn key_to_text(key: Key) -> Option<slint::SharedString> {
+pub(crate) fn key_to_text(key: Key) -> Option<slint::SharedString> {
     Some(match key {
         Key::Char(c) if c.is_ascii_graphic() || c == ' ' => c.into(),
         Key::Enter => SlintKey::Return.into(),

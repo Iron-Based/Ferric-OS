@@ -23,6 +23,8 @@ pub enum Command<'a> {
     Gui,
     /// `monitor`: switch to the live hardware-monitor GUI.
     Monitor,
+    /// `keyboard`: switch to the on-screen keyboard.
+    Keyboard,
     /// `halt`: power the machine off in the emulator.
     Halt,
     /// Anything else; carries the command name as typed (without arguments).
@@ -60,6 +62,8 @@ pub fn parse_command(line: &[char]) -> Command<'_> {
         Command::Gui
     } else if is_name(name, "monitor") {
         Command::Monitor
+    } else if is_name(name, "keyboard") {
+        Command::Keyboard
     } else if is_name(name, "halt") {
         Command::Halt
     } else {
@@ -117,6 +121,7 @@ mod tests {
         assert_eq!(parse_command(&line("CLOCK")), Command::Clock);
         assert_eq!(parse_command(&line("GUI")), Command::Gui);
         assert_eq!(parse_command(&line("MONITOR")), Command::Monitor);
+        assert_eq!(parse_command(&line("KEYBOARD")), Command::Keyboard);
         assert_eq!(parse_command(&line("UPTIME")), Command::Uptime);
         assert_eq!(parse_command(&line("ECHO")), Command::Echo(&[]));
     }
@@ -129,6 +134,7 @@ mod tests {
         assert_eq!(parse_command(&line("clock soon")), Command::Clock);
         assert_eq!(parse_command(&line("gui now")), Command::Gui);
         assert_eq!(parse_command(&line("monitor now")), Command::Monitor);
+        assert_eq!(parse_command(&line("keyboard now")), Command::Keyboard);
     }
 
     #[test]

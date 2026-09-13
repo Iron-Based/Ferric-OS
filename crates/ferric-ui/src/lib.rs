@@ -12,6 +12,7 @@ extern crate alloc;
 // each file explicitly.
 include!(concat!(env!("OUT_DIR"), "/main.rs"));
 include!(concat!(env!("OUT_DIR"), "/monitor.rs"));
+include!(concat!(env!("OUT_DIR"), "/keyboard.rs"));
 
 /// Builds the top-level `MainWindow` component; panics only if Slint's
 /// backend setup failed.
@@ -23,4 +24,10 @@ pub fn main_window() -> MainWindow {
 /// backend setup failed.
 pub fn monitor_window() -> MonitorWindow {
     MonitorWindow::new().expect("Slint MonitorWindow creation failed")
+}
+
+/// Builds the on-screen keyboard component; panics only if Slint's backend
+/// setup failed.
+pub fn keyboard_window() -> KeyboardWindow {
+    KeyboardWindow::new().expect("Slint KeyboardWindow creation failed")
 }

@@ -117,7 +117,7 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
             repo_root,
             image::ImageArgs {
                 image_path: "build/ferric.img".into(),
-                size_mb: 64,
+                size_mb: 160,
             },
         )?;
         runner::run(
