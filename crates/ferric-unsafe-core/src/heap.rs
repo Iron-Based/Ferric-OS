@@ -54,7 +54,7 @@ impl Heap {
 
     /// Replaces the free list with one free block spanning
     /// `[start, start + size)`; false when the region is unusable.
-    fn init(&mut self, start: usize, size: usize) -> bool {
+    pub(crate) fn init(&mut self, start: usize, size: usize) -> bool {
         let start = align_up(start, 8);
         let Some(end) = start.checked_add(size) else {
             return false;
@@ -270,6 +270,12 @@ unsafe impl GlobalAlloc for Spinlock<Heap> {
 // single never-moved static, so giving the marker is what lets `Spinlock<Heap>`
 // implement the `Sync` required by `GlobalAlloc`.
 #[cfg(all(not(test), any(target_arch = "x86_64", target_arch = "aarch64")))]
+unsafe impl Send for Heap {}
+
+// Host test builds re-wrap Heap in a Spinlock used as the test-process
+// `#[global_allocator]`; same exclusivity argument as the kernel path.
+// SAFETY: the host-test global allocator touches Heap only under its Spinlock.
+#[cfg(test)]
 unsafe impl Send for Heap {}
 
 #[cfg(all(not(test), any(target_arch = "x86_64", target_arch = "aarch64")))]
@@ -595,5 +601,162 @@ mod tests {
             heap.lock().dealloc(payload as *mut u8, l);
         }
         assert_eq!(heap.lock().free_bytes(), REGION, "bytes must be conserved");
+    }
+}
+
+/// Decisive allocator isolation test: replay the keyboard window churn with the
+/// REAL kernel `Heap` (not the ferric-ui mirror) as the test-process
+/// `#[global_allocator]`. If the Slint dependency-list corruption reproduces on
+/// the host, the allocator/owner is proven; if it stays 60-round-clean here,
+/// the trigger includes the kernel's specific allocation sequence.
+#[cfg(test)]
+mod real_heap_churn {
+    use super::*;
+    use core::time::Duration;
+    use std::alloc::GlobalAlloc;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use slint::platform::software_renderer::{
+        MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
+    };
+    use slint::platform::{
+        self, Platform, PlatformError, PointerEventButton, WindowAdapter, WindowEvent,
+    };
+
+    const ARENA_SIZE: usize = 512 * 1024 * 1024;
+    // SAFETY: written only by Heap::init before any allocation, then read by
+    // the allocator's bounds checks; both under HEAP_ALLOC's Spinlock.
+    static mut ARENA: [u8; ARENA_SIZE] = [0u8; ARENA_SIZE];
+
+    static HEAP_ALLOC: Spinlock<Heap> = Spinlock::new(Heap::new());
+
+    struct SystemAlloc;
+    // SAFETY: forwards to the Spinlock-guarded real Heap; meets GlobalAlloc's
+    // usize-sized allocation contract.
+    unsafe impl GlobalAlloc for SystemAlloc {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            static INIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !INIT.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                // SAFETY: first allocation, HEAP_ALLOC not yet touched by
+                // anyone else; ARENA is a never-moved static.
+                let start = core::ptr::addr_of!(ARENA) as usize;
+                assert!(
+                    HEAP_ALLOC.lock().init(start, ARENA_SIZE),
+                    "test-process heap arena init failed"
+                );
+            }
+            HEAP_ALLOC.lock().alloc(layout)
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            HEAP_ALLOC.lock().dealloc(ptr, layout)
+        }
+    }
+
+    #[global_allocator]
+    static GLOBAL: SystemAlloc = SystemAlloc;
+
+    /// Host-side twin of the kernel's `FerricPlatform`: each construction
+    /// drops the previous window, matching the kernel's `WINDOW.set`.
+    #[derive(Clone)]
+    struct HostPlatform(Rc<RefCell<Option<Rc<MinimalSoftwareWindow>>>>);
+    impl Platform for HostPlatform {
+        fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
+            let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
+            self.0.replace(Some(window.clone()));
+            window.set_size(slint::PhysicalSize::new(1024, 768));
+            window.show()?;
+            Ok(window)
+        }
+        fn duration_since_start(&self) -> Duration {
+            Duration::ZERO
+        }
+    }
+
+    /// Host twin of the kernel's `run_keyboard` loop at kernel scale: module
+    /// setters, `invoke_init_focus`, real `WindowEvent` dispatch (key presses,
+    /// pointer press/release at on-screen key centers), timers, and fullscreen
+    /// renders, all against the real in-tree Heap as global allocator.
+    #[test]
+    fn real_heap_keyboard_dispatch_churn() {
+        const W: u32 = 1024;
+        const H: u32 = 768;
+        const ROUNDS: usize = 60;
+        const KEYS_PER_ROUND: usize = 12;
+        const KEYS_X0: i32 = 30;
+        const KEYS_Y0: i32 = 104;
+        const KEY_W: i32 = 38;
+        const KEY_H: i32 = 34;
+        const KEY_PITCH_X: i32 = 42;
+        const KEY_PITCH_Y: i32 = 42;
+        let window_slot = Rc::new(RefCell::new(None::<Rc<MinimalSoftwareWindow>>));
+        let platform = HostPlatform(window_slot.clone());
+        platform::set_platform(Box::new(platform))
+            .unwrap_or_else(|e| panic!("platform already set in this test process: {e}"));
+        let mut buf = std::vec![PremultipliedRgbaColor::default(); (W * H) as usize];
+        let keys = [
+            'a', 'b', 'c', 'd', 'e', '1', '2', '3', ' ', '\t', '\r', '\u{8}',
+        ];
+        for _round in 0..ROUNDS {
+            let win = ferric_ui::keyboard_window();
+            let window = window_slot
+                .borrow()
+                .as_ref()
+                .cloned()
+                .expect("keyboard construction creates the window");
+            win.invoke_init_focus();
+            for i in 0..KEYS_PER_ROUND {
+                slint::platform::update_timers_and_animations();
+                let k = keys[(_round * KEYS_PER_ROUND + i) % keys.len()];
+                let text: slint::SharedString = match k {
+                    '\t' => slint::platform::Key::Tab.into(),
+                    '\r' => slint::platform::Key::Return.into(),
+                    '\u{8}' => slint::platform::Key::Backspace.into(),
+                    c => c.into(),
+                };
+                window.dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+                window.dispatch_event(WindowEvent::KeyReleased { text });
+                let col = (_round % 13) as i32;
+                let x = (KEYS_X0 + col * KEY_PITCH_X + KEY_W / 2) as f32;
+                let y = (KEYS_Y0 + (_round as i32 / 13 % 4) * KEY_PITCH_Y + KEY_H / 2) as f32;
+                let pos = slint::LogicalPosition::new(x, y);
+                window.dispatch_event(WindowEvent::PointerPressed {
+                    position: pos,
+                    button: PointerEventButton::Left,
+                });
+                window.dispatch_event(WindowEvent::PointerReleased {
+                    position: pos,
+                    button: PointerEventButton::Left,
+                });
+                win.set_shifted(_round % 2 == 0);
+                window.draw_if_needed(|renderer| {
+                    renderer.render(&mut buf, W as usize);
+                });
+            }
+            // Direct property churn (covers set_typed_text / get_typed_text
+            // paths that dispatch-event tests do not exercise).
+            for sel_col in 0..4 {
+                win.set_sel_col(sel_col);
+            }
+            win.set_sel_row(1);
+            win.set_shifted(true);
+            win.set_caps_on(false);
+            for _ in 0..KEYS_PER_ROUND {
+                win.set_typed_text(slint::SharedString::from("abcde12345"));
+                window.draw_if_needed(|renderer| {
+                    renderer.render(&mut buf, W as usize);
+                });
+                win.set_typed_text(slint::SharedString::default());
+                let _ = win.get_typed_text();
+                window.draw_if_needed(|renderer| {
+                    renderer.render(&mut buf, W as usize);
+                });
+            }
+            let _ = win.get_typed_text();
+            window.draw_if_needed(|renderer| {
+                renderer.render(&mut buf, W as usize);
+            });
+        }
     }
 }

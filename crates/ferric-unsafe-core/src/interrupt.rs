@@ -79,6 +79,51 @@ fn serial_write(s: &str) {
     crate::pl011::with_serial(|serial| serial.write_str(s));
 }
 
+/// Hex-dump `n_words` 64-bit words ascending from `addr` (a live stack
+/// finger) so a post-mortem scan can recover return addresses and arguments.
+/// Rows clamp to the identity-mapped HHDM RAM window and volatile reads stop
+/// LLVM eliding them. Caller guarantees `addr` is on the current kernel stack
+/// (hence mapped); reads of unmapped addresses above RAM top would fault.
+#[cfg(target_arch = "x86_64")]
+pub(crate) fn dump_stack(addr: usize, n_words: usize) {
+    const RAM_LO: usize = 0xffff_8000_0000_0000;
+    const RAM_HI: usize = 0xffff_ffff_9000_0000;
+    let mut row_msg = [0u8; 120];
+    for i in 0..n_words / 4 {
+        let base = addr.wrapping_add(i * 32);
+        if base < RAM_LO || base + 31 >= RAM_HI {
+            break;
+        }
+        // SAFETY: `base` is inside the RAM window on the live kernel stack,
+        // so the four 8-byte volatile reads cannot fault.
+        let (w0, w1, w2, w3) = unsafe {
+            (
+                core::ptr::read_volatile(base as *const u64),
+                core::ptr::read_volatile((base + 8) as *const u64),
+                core::ptr::read_volatile((base + 16) as *const u64),
+                core::ptr::read_volatile((base + 24) as *const u64),
+            )
+        };
+        let pos = {
+            let mut w = BufWriter {
+                buf: &mut row_msg,
+                pos: 0,
+            };
+            let _ = writeln!(
+                w,
+                "  {:+06X}: {:016X} {:016X} {:016X} {:016X}",
+                i * 32,
+                w0,
+                w1,
+                w2,
+                w3
+            );
+            w.pos
+        };
+        serial_write(core::str::from_utf8(&row_msg[..pos]).expect("stack row is ASCII"));
+    }
+}
+
 /// Adapter over a byte buffer implementing `fmt::Write` for exception
 /// diagnostics. Mirrors the panic-handler pattern (no heap, no floats).
 struct BufWriter<'a> {
@@ -128,6 +173,13 @@ fn format_exception<'a>(buf: &'a mut [u8], frame: &ExceptionFrame) -> &'a str {
             "  RIP={:016X} CS={:04X} RFLAGS={:016X}",
             frame.rip, frame.cs, frame.rflags
         );
+        if frame.vector == 14 {
+            let cr2: u64;
+            // SAFETY: `mov cr2` reads the #PF linear address (Intel SDM Vol.
+            // 3A §2.5, CR2) at ring 0; it does not fault.
+            unsafe { core::arch::asm!("mov {0}, cr2", out(reg) cr2) };
+            let _ = writeln!(w, "  CR2={:016X}", cr2);
+        }
         let _ = writeln!(w, "KERNEL HALT");
         let _ = w.write_str("---\n");
         w.pos
@@ -199,6 +251,18 @@ unsafe extern "sysv64" fn exception_common(frame: *const ExceptionFrame) -> ! {
     let mut buf = [0u8; 1024];
     let msg = format_exception(&mut buf, frame);
     serial_write(msg);
+    let old_rsp = frame as *const ExceptionFrame as usize + core::mem::size_of::<ExceptionFrame>();
+    let mut hdr = [0u8; 64];
+    let pos = {
+        let mut hw = BufWriter {
+            buf: &mut hdr,
+            pos: 0,
+        };
+        let _ = writeln!(hw, "  pre-exception RSP ~= {old_rsp:016X}");
+        hw.pos
+    };
+    serial_write(core::str::from_utf8(&hdr[..pos]).expect("header is ASCII"));
+    dump_stack(old_rsp.saturating_sub(0x10), 144);
     crate::halt()
 }
 

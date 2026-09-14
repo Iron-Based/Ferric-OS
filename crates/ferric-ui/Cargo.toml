@@ -10,7 +10,7 @@ build = "build.rs"
 slint.workspace = true
 
 [build-dependencies]
-slint-build = "~1.16"
+slint-build = "~1.17"
 
 [lints]
 workspace = true
