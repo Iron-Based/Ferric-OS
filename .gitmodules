@@ -1,6 +1,0 @@
-[submodule "ferric-k"]
-	path = ferric-k
-	url = https://github.com/fkm-X3/ferric-k.git
-[submodule "Ferric-U"]
-	path = Ferric-U
-	url = https://github.com/Iron-Based/Ferric-U.git
