@@ -56,12 +56,16 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
     step_reset();
 
     steps::step("cargo fmt --check");
-    assert_ok(util::run(CARGO, &["fmt", "--all", "--check"]), "formatting")?;
+    assert_ok(
+        util::run_in(repo_root, CARGO, &["fmt", "--all", "--check"]),
+        "formatting",
+    )?;
 
     // The freestanding bin cannot be checked on the host; target clippy covers it.
     steps::step("clippy (host: libs + tests)");
     assert_ok(
-        util::run(
+        util::run_in(
+            repo_root,
             CARGO,
             &[
                 "clippy",
@@ -82,7 +86,7 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
         let mut args = vec!["clippy", "--workspace", "--target", target_json.as_str()];
         args.extend(KERNEL_CARGO_ARGS);
         args.extend(["--", "-D", "warnings"]);
-        assert_ok(util::run(CARGO, &args), &format!("clippy ({target})"))?;
+        assert_ok(util::run_in(repo_root, CARGO, &args), &format!("clippy ({target})"))?;
     }
 
     for &(target, machine, machine_name) in EXPECTED_MACHINE.iter() {
@@ -90,7 +94,7 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
         let target_json = format!("targets/{target}.json");
         let mut args = vec!["build", "--target", target_json.as_str()];
         args.extend(KERNEL_CARGO_ARGS);
-        assert_ok(util::run(CARGO, &args), &format!("build ({target})"))?;
+        assert_ok(util::run_in(repo_root, CARGO, &args), &format!("build ({target})"))?;
 
         let elf_path = repo_root.join(format!("target/{target}/debug/ferric-kernel"));
         let elf = std::fs::read(&elf_path)
@@ -101,11 +105,19 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
 
     steps::step("test (host: ferric-safe-core + ferric-unsafe-core)");
     assert_ok(
-        util::run(CARGO, &["test", "-p", "ferric-safe-core", "--lib"]),
+        util::run_in(
+            repo_root,
+            CARGO,
+            &["test", "-p", "ferric-safe-core", "--lib"],
+        ),
         "host tests (ferric-safe-core)",
     )?;
     assert_ok(
-        util::run(CARGO, &["test", "-p", "ferric-unsafe-core", "--lib"]),
+        util::run_in(
+            repo_root,
+            CARGO,
+            &["test", "-p", "ferric-unsafe-core", "--lib"],
+        ),
         "host tests (ferric-unsafe-core)",
     )?;
 

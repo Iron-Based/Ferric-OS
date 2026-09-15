@@ -1,2 +1,4 @@
 [alias]
-xtask = "run --manifest-path ferric-k/xtask/Cargo.toml --"
+# Monorepo root: the build/check/run harness is the standalone xtask crate at
+# xtask/ (NOT a workspace member). `cargo xtask <cmd>` routes here.
+xtask = "run --manifest-path xtask/Cargo.toml --"

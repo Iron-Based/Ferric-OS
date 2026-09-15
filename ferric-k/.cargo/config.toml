@@ -6,14 +6,15 @@
 # collides with the prebuilt one behind std ("duplicate lang item `core`").
 # Kernel-target invocations pass the flags explicitly — see xtask/src/check.rs.
 #
-# The build/check/run harness is a standalone xtask crate (NOT a workspace
-# member, so `--workspace --target ...` kernel builds never try to compile it
-# for a freestanding target). `cargo xtask <cmd>` routes here.
+# The build/check/run harness is a standalone xtask crate at the monorepo root
+# (NOT a workspace member, so `--workspace --target ...` kernel builds never
+# try to compile it for a freestanding target). `cargo xtask <cmd>` routes here.
 
 [alias]
 # Single alias keeps cargo's real subcommands (check, run, ...) intact: the
-# harness subcommands are namespaced as `cargo xtask <cmd>`.
-xtask = "run --manifest-path xtask/Cargo.toml --"
+# harness subcommands are namespaced as `cargo xtask <cmd>`. From ferric-k/ the
+# harness's own manifest lives one level up at the monorepo root.
+xtask = "run --manifest-path ../xtask/Cargo.toml --"
 
 # x86_64: link with the higher-half Limine layout (kernels/x86_64.ld) and pin
 # the loader page size so every PT_LOAD gets p_align = 4 KiB regardless of

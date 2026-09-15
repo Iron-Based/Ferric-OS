@@ -30,7 +30,7 @@ pub fn run(repo_root: &Path, args: BuildArgs) -> Result<(), String> {
         steps::note(&format!("building {target} ..."));
         let mut cargo_args = vec!["build", "--target", spec];
         cargo_args.extend(KERNEL_CARGO_ARGS);
-        util::checked("cargo", &cargo_args, &format!("build ({target})"))?;
+        util::checked_in(repo_root, "cargo", &cargo_args, &format!("build ({target})"))?;
 
         let elf_path = repo_root.join(format!("target/{target}/debug/ferric-kernel"));
         if args.no_checks {

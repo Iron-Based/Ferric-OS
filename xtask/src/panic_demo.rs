@@ -1,8 +1,8 @@
-//! Induced-exception demo: builds both kernels with the `exception-on-boot`
-//! feature into a scratch target dir, stages a dual-arch image, and asserts
-//! the exception diagnostic markers on serial for x86_64 and aarch64. The
-//! exception handler parks the CPU with `hlt`/`wfi` (no QEMU exit), so each
-//! boot is killed once its serial log proves the dump rendered.
+//! Induced-panic demo: builds both kernels with the `panic-on-boot` feature
+//! into a scratch target dir, stages a separate image, and asserts the crash
+//! panel's serial markers on x86_64 and aarch64. The panic handler parks the
+//! CPU with `hlt`/`wfi` (no QEMU exit), so each boot is killed once its serial
+//! log proves the panel rendered.
 
 use crate::image;
 use crate::platform;
@@ -13,71 +13,67 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-const EXCEPTION_MARKER: &str = "EXCEPTION";
-const HALT_MARKER: &str = "KERNEL HALT";
-
-const X64_MARKERS: &[&str] = &[EXCEPTION_MARKER, "vector 0", HALT_MARKER];
-const ARM64_MARKERS: &[&str] = &[EXCEPTION_MARKER, "SYNC", HALT_MARKER];
+const PANIC_MARKER: &str = "KERNEL PANIC";
+const PANIC_MESSAGE: &str = "deliberate boot panic (panic-on-boot)";
 
 #[derive(Args)]
-pub struct ExceptionDemoArgs {
+pub struct PanicDemoArgs {
     /// Smoke timeout in seconds.
     #[arg(long, default_value_t = 120)]
     pub smoke_timeout_sec: u64,
 }
 
-pub fn run(repo_root: &Path, args: ExceptionDemoArgs) -> Result<(), String> {
-    let scratch = repo_root.join("build").join("exception-target");
+pub fn run(repo_root: &Path, args: PanicDemoArgs) -> Result<(), String> {
+    let scratch = repo_root.join("build").join("panic-target");
     for (arch, target) in [("x86_64", "x86_64-ferric"), ("aarch64", "aarch64-ferric")] {
-        steps::step(&format!("build exception kernel ({arch})"));
-        build_exception_kernel(repo_root, target, &scratch)?;
+        steps::step(&format!("build panic kernel ({arch})"));
+        build_panic_kernel(repo_root, target, &scratch)?;
     }
 
-    let img = repo_root.join("build").join("ferric-exception.img");
+    let img = repo_root.join("build").join("ferric-panic.img");
     let kernels: &[(&str, &str)] = &[
         (
             "kernel-x86_64.elf",
-            "build/exception-target/x86_64-ferric/debug/ferric-kernel",
+            "build/panic-target/x86_64-ferric/debug/ferric-kernel",
         ),
         (
             "kernel-aarch64.elf",
-            "build/exception-target/aarch64-ferric/debug/ferric-kernel",
+            "build/panic-target/aarch64-ferric/debug/ferric-kernel",
         ),
     ];
     image::assemble(repo_root, &img, 64, kernels)?;
 
     for arch in ["x64", "arm64"] {
-        steps::step(&format!("exception smoke boot ({arch})"));
-        boot_and_assert_exception(repo_root, arch, &img, args.smoke_timeout_sec)?;
+        steps::step(&format!("panic smoke boot ({arch})"));
+        boot_and_assert_panic(repo_root, arch, &img, args.smoke_timeout_sec)?;
     }
 
-    println!(
-        "\nEXCEPTION DEMO PASSED: induced exception diagnostic rendered + serialized on both arches."
-    );
+    println!("\nPANIC DEMO PASSED: induced panic rendered + serialized on both arches.");
     Ok(())
 }
 
-fn build_exception_kernel(repo_root: &Path, target: &str, target_dir: &Path) -> Result<(), String> {
+fn build_panic_kernel(repo_root: &Path, target: &str, target_dir: &Path) -> Result<(), String> {
     let target_json = format!("targets/{target}.json");
     let status = std::process::Command::new("cargo")
         .arg("build")
         .arg("--target")
         .arg(&target_json)
         .arg("--features")
-        .arg("exception-on-boot")
+        .arg("panic-on-boot")
         .arg("-Zbuild-std=core,alloc,compiler_builtins")
         .arg("-Zjson-target-spec")
         .env("CARGO_TARGET_DIR", target_dir)
+        .env_remove("RUSTUP_TOOLCHAIN")
         .current_dir(repo_root)
         .status()
-        .map_err(|e| format!("failed to run cargo for exception kernel ({target}): {e}"))?;
+        .map_err(|e| format!("failed to run cargo for panic kernel ({target}): {e}"))?;
     if !status.success() {
-        return Err(format!("exception kernel build failed ({target})"));
+        return Err(format!("panic kernel build failed ({target})"));
     }
     Ok(())
 }
 
-fn boot_and_assert_exception(
+fn boot_and_assert_panic(
     repo_root: &Path,
     arch: &str,
     image: &Path,
@@ -89,12 +85,6 @@ fn boot_and_assert_exception(
         platform::QEMU_ARM64
     };
     util::find(qemu).map_err(|e| format!("{e} (run: cargo xtask bootstrap)"))?;
-
-    let markers: &[&str] = if arch == "x64" {
-        X64_MARKERS
-    } else {
-        ARM64_MARKERS
-    };
 
     let mut machine: Vec<String> = if arch == "x64" {
         vec![
@@ -140,8 +130,8 @@ fn boot_and_assert_exception(
 
     let build_dir = repo_root.join("build");
     std::fs::create_dir_all(&build_dir).map_err(|e| format!("cannot create {build_dir:?}: {e}"))?;
-    let stdout_log = build_dir.join(format!("last-exception-smoke-{}-stdout.log", arch));
-    let stderr_log = build_dir.join(format!("last-exception-smoke-{}-stderr.log", arch));
+    let stdout_log = build_dir.join(format!("last-panic-smoke-{}-stdout.log", arch));
+    let stderr_log = build_dir.join(format!("last-panic-smoke-{}-stderr.log", arch));
 
     let stdout =
         std::fs::File::create(&stdout_log).map_err(|e| format!("cannot create stdout log: {e}"))?;
@@ -159,16 +149,16 @@ fn boot_and_assert_exception(
         if let Some(st) = child.try_wait().map_err(|e| format!("wait failed: {e}"))? {
             let serial = tail(&stdout_log);
             return Err(format!(
-                "QEMU exited ({}) before the exception marker appeared. Serial tail:\n{}",
+                "QEMU exited ({}) before the panic marker appeared. Serial tail:\n{}",
                 st.code().unwrap_or(-1),
                 serial
             ));
         }
         let content = std::fs::read_to_string(&stdout_log).unwrap_or_default();
-        if markers.iter().all(|m| content.contains(m)) {
+        if content.contains(PANIC_MARKER) && content.contains(PANIC_MESSAGE) {
             let _ = child.kill();
             let _ = child.wait();
-            steps::ok("exception diagnostic markers found on serial");
+            steps::ok("panic panel markers found on serial");
             return Ok(());
         }
         if Instant::now() >= deadline {
@@ -176,7 +166,7 @@ fn boot_and_assert_exception(
             let _ = child.wait();
             let serial = tail(&stdout_log);
             return Err(format!(
-                "no exception markers within {}s (killed QEMU). Serial tail:\n{}",
+                "no panic markers within {}s (killed QEMU). Serial tail:\n{}",
                 timeout_secs, serial
             ));
         }
