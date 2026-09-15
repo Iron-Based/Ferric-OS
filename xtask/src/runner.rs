@@ -390,6 +390,8 @@ fn run_with_injection(
             && attempts < MAX_ATTEMPTS
             && typed_at.elapsed() >= RETRY_GRACE
         {
+            send_input(qmp.as_mut(), write_side.as_mut(), "\r")?;
+            std::thread::sleep(Duration::from_millis(50));
             send_input(qmp.as_mut(), write_side.as_mut(), command)?;
             attempts += 1;
             typed_at = std::time::Instant::now();
