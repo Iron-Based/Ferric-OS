@@ -1,0 +1,320 @@
+import "DejaVuSans.ttf";
+
+/// One keyboard cell: the two candidate glyphs plus whether it is a letter
+/// (letters rise with caps XOR shift; punctuation with shift only).
+export struct KeyDef {
+    low: string,
+    high: string,
+    letter: bool,
+}
+
+/// A single keycap filling its layout cell. Keycaps must leave positioning to
+/// their parent layout: hit-testing translates coordinates down the item tree,
+/// so an interior element offset from the component root never matches a press.
+component KeyCap {
+    in property <string> cap-low: "";
+    in property <string> cap-high: "";
+    in property <bool> letter: false;
+    in property <bool> shift-state: false;
+    in property <bool> caps-state: false;
+    in property <bool> selected: false;
+    in property <bool> active: false;
+    callback pressed;
+
+    property <bool> high-shown:
+        (root.letter && ((root.shift-state && !root.caps-state) || (!root.shift-state && root.caps-state)))
+        || (!root.letter && root.shift-state);
+
+    Rectangle {
+        border-radius: 4px;
+        background: root.selected || root.active ? #ffd24a : #2b2d3f;
+        border-width: 1px;
+        border-color: root.selected || root.active ? #ffd24a : #42455f;
+        TouchArea {
+            clicked => {
+                root.pressed();
+            }
+        }
+        Text {
+            width: 100%;
+            height: 100%;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            text: root.high-shown ? root.cap-high : root.cap-low;
+            color: root.selected || root.active ? #161621 : #dfe2f2;
+            font-size: 15px;
+        }
+    }
+}
+
+export component KeyboardWindow inherits Window {
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: #161621;
+    default-font-family: "DejaVu Sans";
+
+    in property <bool> shifted: false;
+    in property <bool> caps-on: false;
+    in-out property <string> typed-text: "";
+    in property <int> sel-row: 0;
+    in property <int> sel-col: 0;
+
+    callback char-pressed(string, string);
+    callback space-pressed;
+    callback backspace-pressed;
+    callback enter-pressed;
+    callback shift-pressed;
+    callback caps-pressed;
+    // The builtin TextInput only accepts characters while focused; the runner
+    // calls this once after the window is shown so injected key events land.
+    callback init-focus;
+    init-focus => { input.focus(); }
+
+    // Char rows. Row lengths are mirrored in `ferric-unsafe-core`'s GRID_ROWS
+    // so stub-pointer selection stays in bounds. Cells are 38x34 with 4px
+    // spacing; the glue taps centers at x = 30 + col*42 + 19, y = 104 + row*42.
+    property <[KeyDef]> row0: [
+        { low: "`", high: "~", letter: false },
+        { low: "1", high: "!", letter: false },
+        { low: "2", high: "@", letter: false },
+        { low: "3", high: "#", letter: false },
+        { low: "4", high: "$", letter: false },
+        { low: "5", high: "%", letter: false },
+        { low: "6", high: "^", letter: false },
+        { low: "7", high: "&", letter: false },
+        { low: "8", high: "*", letter: false },
+        { low: "9", high: "(", letter: false },
+        { low: "0", high: ")", letter: false },
+        { low: "-", high: "_", letter: false },
+        { low: "=", high: "+", letter: false },
+    ];
+    property <[KeyDef]> row1: [
+        { low: "q", high: "Q", letter: true },
+        { low: "w", high: "W", letter: true },
+        { low: "e", high: "E", letter: true },
+        { low: "r", high: "R", letter: true },
+        { low: "t", high: "T", letter: true },
+        { low: "y", high: "Y", letter: true },
+        { low: "u", high: "U", letter: true },
+        { low: "i", high: "I", letter: true },
+        { low: "o", high: "O", letter: true },
+        { low: "p", high: "P", letter: true },
+        { low: "[", high: "{", letter: false },
+        { low: "]", high: "}", letter: false },
+        { low: "\\", high: "|", letter: false },
+    ];
+    property <[KeyDef]> row2: [
+        { low: "a", high: "A", letter: true },
+        { low: "s", high: "S", letter: true },
+        { low: "d", high: "D", letter: true },
+        { low: "f", high: "F", letter: true },
+        { low: "g", high: "G", letter: true },
+        { low: "h", high: "H", letter: true },
+        { low: "j", high: "J", letter: true },
+        { low: "k", high: "K", letter: true },
+        { low: "l", high: "L", letter: true },
+        { low: ";", high: ":", letter: false },
+        { low: "'", high: "\"", letter: false },
+    ];
+    property <[KeyDef]> row3: [
+        { low: "z", high: "Z", letter: true },
+        { low: "x", high: "X", letter: true },
+        { low: "c", high: "C", letter: true },
+        { low: "v", high: "V", letter: true },
+        { low: "b", high: "B", letter: true },
+        { low: "n", high: "N", letter: true },
+        { low: "m", high: "M", letter: true },
+        { low: ",", high: "<", letter: false },
+        { low: ".", high: ">", letter: false },
+        { low: "/", high: "?", letter: false },
+    ];
+
+    Text {
+        x: 30px;
+        y: 12px;
+        text: "FERRIC-K / ON-SCREEN KEYBOARD";
+        color: #dfe2f2;
+        font-size: 20px;
+    }
+
+    Text {
+        x: 30px;
+        y: 40px;
+        width: 580px;
+        text: "shift " + (root.shifted ? "ON" : "off") + "  |  caps " + (root.caps-on ? "ON" : "off");
+        color: #8f94ad;
+        font-size: 13px;
+    }
+
+    Rectangle {
+        x: 30px;
+        y: 58px;
+        width: 580px;
+        height: 32px;
+        border-radius: 4px;
+        background: #262838;
+        border-width: 1px;
+        border-color: #42455f;
+    }
+
+    input := TextInput {
+        x: 34px;
+        y: 61px;
+        width: 572px;
+        height: 26px;
+        text <=> root.typed-text;
+        color: #dfe2f2;
+        single-line: true;
+        vertical-alignment: center;
+        font-size: 15px;
+    }
+
+    HorizontalLayout {
+        x: 30px;
+        y: 104px;
+        height: 34px;
+        spacing: 4px;
+        for k[i] in root.row0 : KeyCap {
+            width: 38px;
+            height: 34px;
+            cap-low: k.low;
+            cap-high: k.high;
+            letter: k.letter;
+            shift-state: root.shifted;
+            caps-state: root.caps-on;
+            selected: i == root.sel-col && 0 == root.sel-row;
+            pressed => {
+                root.char-pressed(k.low, k.high);
+            }
+        }
+        KeyCap {
+            width: 44px;
+            height: 34px;
+            cap-low: "DEL";
+            cap-high: "DEL";
+            letter: false;
+            selected: false;
+            pressed => {
+                root.backspace-pressed();
+            }
+        }
+    }
+
+    HorizontalLayout {
+        x: 30px;
+        y: 146px;
+        height: 34px;
+        spacing: 4px;
+        for k[i] in root.row1 : KeyCap {
+            width: 38px;
+            height: 34px;
+            cap-low: k.low;
+            cap-high: k.high;
+            letter: k.letter;
+            shift-state: root.shifted;
+            caps-state: root.caps-on;
+            selected: i == root.sel-col && 1 == root.sel-row;
+            pressed => {
+                root.char-pressed(k.low, k.high);
+            }
+        }
+    }
+
+    HorizontalLayout {
+        x: 30px;
+        y: 188px;
+        height: 34px;
+        spacing: 4px;
+        for k[i] in root.row2 : KeyCap {
+            width: 38px;
+            height: 34px;
+            cap-low: k.low;
+            cap-high: k.high;
+            letter: k.letter;
+            shift-state: root.shifted;
+            caps-state: root.caps-on;
+            selected: i == root.sel-col && 2 == root.sel-row;
+            pressed => {
+                root.char-pressed(k.low, k.high);
+            }
+        }
+    }
+
+    HorizontalLayout {
+        x: 30px;
+        y: 230px;
+        height: 34px;
+        spacing: 4px;
+        for k[i] in root.row3 : KeyCap {
+            width: 38px;
+            height: 34px;
+            cap-low: k.low;
+            cap-high: k.high;
+            letter: k.letter;
+            shift-state: root.shifted;
+            caps-state: root.caps-on;
+            selected: i == root.sel-col && 3 == root.sel-row;
+            pressed => {
+                root.char-pressed(k.low, k.high);
+            }
+        }
+    }
+
+    HorizontalLayout {
+        x: 30px;
+        y: 272px;
+        height: 34px;
+        spacing: 4px;
+        KeyCap {
+            width: 80px;
+            height: 34px;
+            cap-low: "CAPS";
+            cap-high: "CAPS";
+            letter: false;
+            active: root.caps-on;
+            pressed => {
+                root.caps-pressed();
+            }
+        }
+        KeyCap {
+            width: 84px;
+            height: 34px;
+            cap-low: "SHIFT";
+            cap-high: "SHIFT";
+            letter: false;
+            active: root.shifted;
+            pressed => {
+                root.shift-pressed();
+            }
+        }
+        KeyCap {
+            width: 214px;
+            height: 34px;
+            cap-low: "SPACE";
+            cap-high: "SPACE";
+            letter: false;
+            pressed => {
+                root.space-pressed();
+            }
+        }
+        KeyCap {
+            width: 86px;
+            height: 34px;
+            cap-low: "ENTER";
+            cap-high: "ENTER";
+            letter: false;
+            pressed => {
+                root.enter-pressed();
+            }
+        }
+    }
+
+    Text {
+        x: 30px;
+        y: 320px;
+        width: 580px;
+        text: "arrows: select key    enter: tap it    esc: back to shell";
+        color: #8f94ad;
+        font-size: 13px;
+    }
+}

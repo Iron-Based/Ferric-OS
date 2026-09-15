@@ -1,0 +1,168 @@
+//! Arch-neutral traits (`TextSink`, `TimeSource`, `InputDevice`, ...) and
+//! shared data types forming the boundary between safe logic and hardware
+//! implementations; implementors live in `ferric-unsafe-core`.
+#![no_std]
+#![forbid(unsafe_code)]
+
+/// A destination for kernel text output, implemented per architecture.
+pub trait TextSink {
+    /// Writes all of `s`, blocking until the device accepts every byte. Line
+    /// endings arrive as bare `\n`; implementations translate for the device.
+    fn write_str(&mut self, s: &str);
+}
+
+/// A monotonic clock measuring time since the kernel's uptime counter
+/// started, implemented per architecture.
+pub trait TimeSource {
+    /// Elapsed time since the counter started, in whole nanoseconds.
+    fn uptime_ns(&self) -> u64;
+}
+
+/// Hours/minutes/seconds read from the kernel clock, as a broken-down
+/// time-of-day. Seconds is a whole number; fractions of a second are dropped.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TimeOfDay {
+    pub hours: u8,
+    pub minutes: u8,
+    pub seconds: u8,
+}
+
+impl TimeOfDay {
+    pub const fn new(hours: u8, minutes: u8, seconds: u8) -> Self {
+        Self {
+            hours,
+            minutes,
+            seconds,
+        }
+    }
+}
+
+/// A wall-clock-style time source, distinct from the monotonic [`TimeSource`].
+/// Implementors translate a monotonic uptime into a human-readable local
+/// time-of-day (Ferric-K treats boot as 00:00:00 until an RTC exists).
+pub trait Clock {
+    fn local_time(&self) -> TimeOfDay;
+}
+
+/// A logical key, independent of scan code set or keyboard layout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Key {
+    Char(char),
+    Enter,
+    Tab,
+    Backspace,
+    Escape,
+    Up,
+    Down,
+    Left,
+    Right,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    Insert,
+    Delete,
+    LeftShift,
+    RightShift,
+    LeftControl,
+    RightControl,
+    LeftAlt,
+    RightAlt,
+    CapsLock,
+    F(u8),
+    /// A make/break code no layout maps.
+    Unknown(u8),
+}
+
+/// A key was pressed or released, reported by an [`InputDevice`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeyEvent {
+    Press(Key),
+    Release(Key),
+}
+
+/// A polling input source: each call drains at most one event from the
+/// device's buffer, returning `None` when it is empty.
+pub trait InputDevice {
+    fn poll(&mut self) -> Option<KeyEvent>;
+}
+
+/// An 8-bit-per-channel color, independent of a surface's pixel layout.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Rgb {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+impl Rgb {
+    pub const fn new(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+}
+
+/// Memory region kind, mirroring the Limine `LIMINE_MEMMAP_*` type constants.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemoryRegionKind {
+    Usable,
+    Reserved,
+    AcpiReclaimable,
+    AcpiNvs,
+    BadMemory,
+    BootloaderReclaimable,
+    ExecutableAndModules,
+    Framebuffer,
+    ReservedMapped,
+    Unknown(u64),
+}
+
+/// A single region from the firmware memory map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MemoryRegion {
+    pub base: u64,
+    pub length: u64,
+    pub kind: MemoryRegionKind,
+}
+
+impl MemoryRegion {
+    pub const fn new(base: u64, length: u64, kind: MemoryRegionKind) -> Self {
+        Self { base, length, kind }
+    }
+
+    /// End address (exclusive): `base + length`.
+    pub const fn end(&self) -> u64 {
+        self.base.wrapping_add(self.length)
+    }
+}
+
+/// Maximum number of memory regions the monitor can track.
+pub const MAX_MEMORY_REGIONS: usize = 32;
+
+/// A snapshot of hardware counters and firmware data for the monitor.
+#[derive(Clone, Debug)]
+pub struct MonitorSample {
+    /// Monotonic uptime in nanoseconds.
+    pub uptime_ns: u64,
+    /// Total timer tick count (wall-clock ticks since boot).
+    pub total_ticks: u64,
+    /// Ticks spent in the idle loop (`hlt`/`wfi`), for CPU-load computation.
+    pub idle_ticks: u64,
+    /// Firmware memory-map regions.
+    pub memory_regions: [MemoryRegion; MAX_MEMORY_REGIONS],
+    /// Number of valid entries in `memory_regions`.
+    pub memory_region_count: usize,
+}
+
+impl MonitorSample {
+    /// Returns the memory region slice (without the trailing zeroed entries).
+    pub fn regions(&self) -> &[MemoryRegion] {
+        &self.memory_regions[..self.memory_region_count.min(MAX_MEMORY_REGIONS)]
+    }
+}
+
+/// Arch-neutral provider of monitor samples; implemented per architecture
+/// in `ferric-unsafe-core`.
+pub trait MonitorSource {
+    /// Capture a snapshot of hardware counters and firmware data.
+    fn sample(&self) -> MonitorSample;
+}
