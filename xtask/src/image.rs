@@ -13,8 +13,8 @@ const FAT_TYPE_WITH_LBA: u8 = 0x0E;
 
 #[derive(Args)]
 pub struct ImageArgs {
-    /// Output image path (default build/ferric.img).
-    #[arg(long, default_value = "build/ferric.img")]
+    /// Output image path (default ferric-k/build/ferric.img).
+    #[arg(long, default_value = "ferric-k/build/ferric.img")]
     pub image_path: String,
     /// Image size in MiB.
     #[arg(long, default_value_t = 160)]
@@ -53,7 +53,7 @@ pub fn assemble(
         util::find(tool).map_err(|e| format!("{e} (run: cargo xtask bootstrap)"))?;
     }
 
-    let limine_dir = repo_root.join("third_party").join("limine");
+    let limine_dir = repo_root.join("ferric-k/third_party").join("limine");
     if !limine_dir.join("limine-bios.sys").is_file() {
         return Err("third_party/limine missing. Run: cargo xtask bootstrap".into());
     }
@@ -80,13 +80,13 @@ pub fn assemble(
         let target = target_for(name);
         if !p.is_file() {
             return Err(format!(
-                "{name} not found at {}. Build it first: cargo build --target targets/{target}.json -Zbuild-std=core,alloc,compiler_builtins -Zjson-target-spec",
+                "{name} not found at {}. Build it first: cargo build --target ferric-k/targets/{target}.json -Zbuild-std=core,alloc,compiler_builtins -Zjson-target-spec",
                 p.display()
             ));
         }
     }
 
-    let conf = repo_root.join("boot/limine.conf");
+    let conf = repo_root.join("ferric-k/boot/limine.conf");
     let bios_sys = limine_dir.join("limine-bios.sys");
     let uefi = [
         limine_dir.join("BOOTX64.EFI"),

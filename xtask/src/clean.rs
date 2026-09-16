@@ -3,8 +3,9 @@ use clap::Args;
 use std::path::Path;
 
 /// Directories removed by `cargo xtask clean` — the cargo build cache
-/// (target/) plus the assembled dual-arch images (build/).
-const CLEAN_DIRS: [&str; 2] = ["target", "build"];
+/// (root target/) plus the assembled dual-arch images and demo scratch
+/// dirs (ferric-k/build/).
+const CLEAN_DIRS: [&str; 2] = ["target", "ferric-k/build"];
 
 #[derive(Args)]
 pub struct CleanArgs {}

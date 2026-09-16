@@ -1,2 +1,6 @@
+# Monorepo build artifacts
 /target
 /xtask/target
+/ferric-k/build
+/ferric-k/third_party/
+Cargo.lock.bak

@@ -27,21 +27,21 @@ pub struct ExceptionDemoArgs {
 }
 
 pub fn run(repo_root: &Path, args: ExceptionDemoArgs) -> Result<(), String> {
-    let scratch = repo_root.join("build").join("exception-target");
+    let scratch = repo_root.join("ferric-k/build").join("exception-target");
     for (arch, target) in [("x86_64", "x86_64-ferric"), ("aarch64", "aarch64-ferric")] {
         steps::step(&format!("build exception kernel ({arch})"));
         build_exception_kernel(repo_root, target, &scratch)?;
     }
 
-    let img = repo_root.join("build").join("ferric-exception.img");
+    let img = repo_root.join("ferric-k/build").join("ferric-exception.img");
     let kernels: &[(&str, &str)] = &[
         (
             "kernel-x86_64.elf",
-            "build/exception-target/x86_64-ferric/debug/ferric-kernel",
+            "ferric-k/build/exception-target/x86_64-ferric/debug/ferric-kernel",
         ),
         (
             "kernel-aarch64.elf",
-            "build/exception-target/aarch64-ferric/debug/ferric-kernel",
+            "ferric-k/build/exception-target/aarch64-ferric/debug/ferric-kernel",
         ),
     ];
     image::assemble(repo_root, &img, 64, kernels)?;
@@ -58,7 +58,7 @@ pub fn run(repo_root: &Path, args: ExceptionDemoArgs) -> Result<(), String> {
 }
 
 fn build_exception_kernel(repo_root: &Path, target: &str, target_dir: &Path) -> Result<(), String> {
-    let target_json = format!("targets/{target}.json");
+    let target_json = format!("ferric-k/targets/{target}.json");
     let status = std::process::Command::new("cargo")
         .arg("build")
         .arg("--target")
@@ -111,7 +111,7 @@ fn boot_and_assert_exception(
             "stdio".into(),
         ]
     } else {
-        let firmware = repo_root.join("third_party/firmware/edk2-aarch64-code.fd");
+        let firmware = repo_root.join("ferric-k/third_party/firmware/edk2-aarch64-code.fd");
         if !firmware.is_file() {
             return Err(format!(
                 "aarch64 UEFI firmware missing at {}. Run: cargo xtask bootstrap",
@@ -139,7 +139,7 @@ fn boot_and_assert_exception(
     };
     machine.extend(["-display".into(), "none".into(), "-no-reboot".into()]);
 
-    let build_dir = repo_root.join("build");
+    let build_dir = repo_root.join("ferric-k/build");
     std::fs::create_dir_all(&build_dir).map_err(|e| format!("cannot create {build_dir:?}: {e}"))?;
     let stdout_log = build_dir.join(format!("last-exception-smoke-{}-stdout.log", arch));
     let stderr_log = build_dir.join(format!("last-exception-smoke-{}-stderr.log", arch));

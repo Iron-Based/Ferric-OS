@@ -1,6 +1,28 @@
-[package]
-name = "Ferric-OS"
+[workspace]
+resolver = "3"
+members = [
+    "ferric-k/crates/ferric-api",
+    "ferric-k/crates/ferric-unsafe-core",
+    "ferric-k/crates/ferric-safe-core",
+    "ferric-k/crates/ferric-ui",
+    "ferric-k/crates/ferric-kernel",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "Apache 2.0"
 
-[dependencies]
+[workspace.dependencies]
+ferric-api = { path = "ferric-k/crates/ferric-api" }
+ferric-unsafe-core = { path = "ferric-k/crates/ferric-unsafe-core" }
+ferric-safe-core = { path = "ferric-k/crates/ferric-safe-core" }
+ferric-ui = { path = "ferric-k/crates/ferric-ui" }
+slint = { version = "~1.17", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
+
+# Shared lint policy — every crate opts in via `[lints] workspace = true`.
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"

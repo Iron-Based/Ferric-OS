@@ -2,3 +2,25 @@
 # Monorepo root: the build/check/run harness is the standalone xtask crate at
 # xtask/ (NOT a workspace member). `cargo xtask <cmd>` routes here.
 xtask = "run --manifest-path xtask/Cargo.toml --"
+
+# Kernel freestanding targets: per-target rustflags (higher-half Limine linker
+# scripts, pinned page size). These only activate for `--target x86_64-ferric`
+# or `--target aarch64-ferric` and are harmless for host builds. Linker script
+# paths resolve relative to the cwd cargo is invoked from, and xtask always
+# invokes kernel builds from the monorepo root.
+
+[target.x86_64-ferric]
+rustflags = [
+    "-C", "link-arg=-Tferric-k/kernels/x86_64.ld",
+    "-C", "link-arg=-z",
+    "-C", "link-arg=max-page-size=0x1000",
+]
+
+# aarch64: same higher-half Limine layout (kernels/aarch64.ld); ld.lld
+# defaults this arch to 64 KiB loader pages, so pin 4 KiB like on x86_64.
+[target.aarch64-ferric]
+rustflags = [
+    "-C", "link-arg=-Tferric-k/kernels/aarch64.ld",
+    "-C", "link-arg=-z",
+    "-C", "link-arg=max-page-size=0x1000",
+]

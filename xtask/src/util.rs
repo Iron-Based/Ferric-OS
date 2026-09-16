@@ -3,20 +3,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 pub fn repo_root() -> PathBuf {
-    // The xtask lives at the monorepo root; the Ferric-K workspace is the
-    // sibling directory that owns the kernel crates and target specs. Derive
-    // it from CARGO_MANIFEST_DIR so it resolves the same from any cwd.
+    // The xtask lives at the monorepo root. Derive it from CARGO_MANIFEST_DIR
+    // so it resolves the same from any cwd.
     let xtask_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let monorepo_root = xtask_dir
+    let root = xtask_dir
         .parent()
         .expect("xtask must live one level under the monorepo root?");
-    let ferric_k = monorepo_root.join("ferric-k");
-    if ferric_k.join("Cargo.toml").is_file() && ferric_k.join("crates/ferric-kernel").is_dir() {
-        return ferric_k;
+    if root.join("ferric-k/crates/ferric-kernel").is_dir() {
+        return root.to_path_buf();
     }
     panic!(
-        "could not locate the Ferric-K workspace at {} (expected ferric-k/crates/ferric-kernel)",
-        ferric_k.display()
+        "could not locate the monorepo root at {} (expected ferric-k/crates/ferric-kernel)",
+        root.display()
     );
 }
 
@@ -47,11 +45,9 @@ pub fn run(program: &str, args: &[&str]) -> std::io::Result<Output> {
 }
 
 /// Like `run`, but executes with `dir` as the working directory. Cargo
-/// subcommands must run from the Ferric-K workspace so their workspace,
+/// subcommands must run from the monorepo root so the workspace,
 /// rust-toolchain.toml, and per-target cfg pick up. `RUSTUP_TOOLCHAIN` is
-/// stripped so rustup re-resolves the pin from `dir` instead of inheriting
-/// whatever channel the outer `cargo xtask` invocation used (e.g. stable at
-/// the monorepo root).
+/// stripped so rustup re-resolves the pin from `dir`.
 pub fn run_in(dir: &Path, program: &str, args: &[&str]) -> std::io::Result<Output> {
     Command::new(program)
         .args(args)

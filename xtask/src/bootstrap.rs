@@ -73,7 +73,7 @@ fn scan_report() {
 }
 
 fn ensure_limine(repo_root: &Path) -> Result<(), String> {
-    let limine_dir = repo_root.join("third_party").join("limine");
+    let limine_dir = repo_root.join("ferric-k/third_party").join("limine");
     let version_marker = limine_dir.join("LIMINE_VERSION");
     let marker_matches = std::fs::read_to_string(&version_marker)
         .map(|s| s.trim() == LIMINE_VERSION)
@@ -174,7 +174,7 @@ fn stage_firmware(repo_root: &Path) -> Result<(), String> {
                 .to_string()
         })?;
 
-    let fw_dir = repo_root.join("third_party").join("firmware");
+    let fw_dir = repo_root.join("ferric-k/third_party").join("firmware");
     let dst = fw_dir.join("edk2-aarch64-code.fd");
     if dst.is_file() && file_sha256(&dst)? == file_sha256(&src)? {
         steps::ok("third_party/firmware/edk2-aarch64-code.fd matches installed QEMU");

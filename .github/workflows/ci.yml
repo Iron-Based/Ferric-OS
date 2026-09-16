@@ -30,10 +30,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ferric-k/target
+            target
             xtask/target
             ferric-k/third_party
-          key: ${{ runner.os }}-build-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('ferric-k/rust-toolchain.toml', 'xtask/src/bootstrap.rs') }}
+          key: ${{ runner.os }}-build-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('rust-toolchain.toml', 'xtask/src/bootstrap.rs') }}
           restore-keys: |
             ${{ runner.os }}-build-
 

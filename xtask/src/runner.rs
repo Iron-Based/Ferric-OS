@@ -208,7 +208,7 @@ fn machine_spec(
             serial_port: None,
         })
     } else {
-        let firmware = repo_root.join("third_party/firmware/edk2-aarch64-code.fd");
+        let firmware = repo_root.join("ferric-k/third_party/firmware/edk2-aarch64-code.fd");
         if !firmware.is_file() {
             return Err(format!(
                 "aarch64 UEFI firmware missing at {}. Run: cargo xtask bootstrap",
@@ -267,7 +267,7 @@ pub fn run(repo_root: &Path, args: RunArgs) -> Result<(), String> {
     let image_path = repo_root.join(
         args.image_path
             .clone()
-            .unwrap_or_else(|| "build/ferric.img".into()),
+            .unwrap_or_else(|| "ferric-k/build/ferric.img".into()),
     );
     if !image_path.is_file() {
         steps::note("image missing, building it");
@@ -301,7 +301,7 @@ pub fn run(repo_root: &Path, args: RunArgs) -> Result<(), String> {
     }
 
     steps::note(&format!("smoke boot (headless{accel_note})"));
-    let build_dir = repo_root.join("build");
+    let build_dir = repo_root.join("ferric-k/build");
     std::fs::create_dir_all(&build_dir).map_err(|e| format!("cannot create {build_dir:?}: {e}"))?;
     let stdout_log = build_dir.join(format!("last-smoke-{}-stdout.log", args.arch));
     let stderr_log = build_dir.join(format!("last-smoke-{}-stderr.log", args.arch));
@@ -411,16 +411,16 @@ fn run_with_injection(
 /// Splits a command into injection tokens: `[name]` becomes one named key
 /// (`[right]` → the right arrow), everything else one character. Frees the
 /// script from HMP keysym spellings while keeping the old `\r`/`\x1B` steps.
-fn input_tokens<'a>(command: &'a str) -> Vec<&'a str> {
+fn input_tokens(command: &str) -> Vec<&str> {
     let mut tokens = Vec::new();
     let mut rest = command;
     while let Some(first) = rest.chars().next() {
-        if first == '[' {
-            if let Some(end) = rest.find(']') {
-                tokens.push(&rest[1..end]);
-                rest = &rest[end + 1..];
-                continue;
-            }
+        if first == '['
+            && let Some(end) = rest.find(']')
+        {
+            tokens.push(&rest[1..end]);
+            rest = &rest[end + 1..];
+            continue;
         }
         tokens.push(&rest[..first.len_utf8()]);
         rest = &rest[first.len_utf8()..];

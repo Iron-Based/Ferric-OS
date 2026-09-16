@@ -13,8 +13,8 @@ const KERNEL_CARGO_ARGS: [&str; 2] = [
 
 const TARGETS: [(&str, &str, u16, &str); 2] = [
     // (target, spec, e_machine, name)
-    ("x86_64-ferric", "targets/x86_64-ferric.json", 0x3E, "EM_X86_64"),
-    ("aarch64-ferric", "targets/aarch64-ferric.json", 0xB7, "EM_AARCH64"),
+    ("x86_64-ferric", "ferric-k/targets/x86_64-ferric.json", 0x3E, "EM_X86_64"),
+    ("aarch64-ferric", "ferric-k/targets/aarch64-ferric.json", 0xB7, "EM_AARCH64"),
 ];
 
 #[derive(Args)]

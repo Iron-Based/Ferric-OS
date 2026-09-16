@@ -18,6 +18,8 @@ const EXPECTED_MACHINE: [(&str, u16, &str); 2] = [
     ("aarch64-ferric", 0xB7, "EM_AARCH64"),
 ];
 
+const TARGET_JSON_PREFIX: &str = "ferric-k/targets/";
+
 #[derive(Args)]
 pub struct CheckArgs {
     /// Skip the QEMU smoke-boot steps (for hosts without QEMU).
@@ -82,7 +84,7 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
 
     for &(target, _, _) in EXPECTED_MACHINE.iter() {
         steps::step(&format!("clippy --target {target}"));
-        let target_json = format!("targets/{target}.json");
+        let target_json = format!("{TARGET_JSON_PREFIX}{target}.json");
         let mut args = vec!["clippy", "--workspace", "--target", target_json.as_str()];
         args.extend(KERNEL_CARGO_ARGS);
         args.extend(["--", "-D", "warnings"]);
@@ -91,7 +93,7 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
 
     for &(target, machine, machine_name) in EXPECTED_MACHINE.iter() {
         steps::step(&format!("build --target {target} (+ELF checks)"));
-        let target_json = format!("targets/{target}.json");
+        let target_json = format!("{TARGET_JSON_PREFIX}{target}.json");
         let mut args = vec!["build", "--target", target_json.as_str()];
         args.extend(KERNEL_CARGO_ARGS);
         assert_ok(util::run_in(repo_root, CARGO, &args), &format!("build ({target})"))?;
@@ -128,7 +130,7 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
         image::run(
             repo_root,
             image::ImageArgs {
-                image_path: "build/ferric.img".into(),
+                image_path: "ferric-k/build/ferric.img".into(),
                 size_mb: 160,
             },
         )?;
@@ -137,7 +139,7 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
             runner::RunArgs {
                 arch: "x64".into(),
                 smoke: true,
-                image_path: Some("build/ferric.img".into()),
+                image_path: Some("ferric-k/build/ferric.img".into()),
                 smoke_timeout_sec: 240,
             },
         )?;
@@ -146,7 +148,7 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
             runner::RunArgs {
                 arch: "arm64".into(),
                 smoke: true,
-                image_path: Some("build/ferric.img".into()),
+                image_path: Some("ferric-k/build/ferric.img".into()),
                 smoke_timeout_sec: 240,
             },
         )?;

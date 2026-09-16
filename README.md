@@ -8,17 +8,17 @@ repo-level tooling that builds, checks, and boots it.
 ## Repository layout
 
 ```
-ferric-k/    the kernel: own cargo workspace (crates/, boot/, targets/, fonts/)
-             with its pinned nightly (rust-toolchain.toml) and per-arch linker
-             setup (.cargo/config.toml, kernels/*.ld)
+ferric-k/    the kernel: crates/, boot/, targets/, fonts/, kernels/*.ld
 xtask/       cross-platform build/check/run harness (standalone crate)
+Cargo.toml   ONE cargo workspace: kernel crates + the empty Ferric-OS package
+rust-toolchain.toml    pinned nightly for the whole repo
 .github/     CI: cargo xtask bootstrap + cargo xtask check on push/PR
 ```
 
-`ferric-k` is deliberately its own cargo workspace, not a member of the root
-workspace: it builds freestanding crates against custom target specs, which a
-host std workspace member would pollute. The root workspace hosts root-level
-packages (e.g. `Ferric-OS`).
+The root `Cargo.toml` is the single workspace for the kernel crates (under
+`ferric-k/crates/`). `xtask/` stays standalone — a host std crate would break
+the `--workspace --target ...` kernel builds. `ferric-root` stays in sync.
+`ferric-u/` is a not-yet-built userland placeholder.
 
 ## Quick start
 
@@ -31,9 +31,8 @@ cargo xtask run --arch arm64  # boot interactively in QEMU (aarch64)
 cargo xtask clean       # wipe the build cache (target/ and build/)
 ```
 
-Run from the repo root, or from `ferric-k/` — the `cargo xtask` alias resolves
-to the harness in both places and the harness targets the kernel workspace
-either way.
+Run from the repo root — `cargo xtask` is aliased in the root
+`.cargo/config.toml` and the harness targets the monorepo root directly.
 
 ## Commands
 
