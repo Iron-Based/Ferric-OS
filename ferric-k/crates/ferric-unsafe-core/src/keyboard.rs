@@ -58,8 +58,11 @@ enum PendingKey {
 /// Runs the full-screen on-screen keyboard, returning when Escape is pressed.
 /// The caller must repaint the console over the framebuffer afterwards.
 pub fn run_keyboard() {
+    slint_platform::write_serial("DBG kbd: entry\n");
     let ui = ferric_ui::keyboard_window();
+    slint_platform::write_serial("DBG kbd: window built\n");
     let window = slint_platform::window();
+    slint_platform::write_serial("DBG kbd: adapter\n");
     let (w, h) = {
         let size = window.size();
         (size.width, size.height)
@@ -94,10 +97,17 @@ pub fn run_keyboard() {
         let state = state.clone();
         move || state.get().toggle_caps()
     });
+    slint_platform::write_serial("DBG kbd: callbacks\n");
 
     // The TextInput only accepts injected characters while focused; the window
     // is already shown, so hand it the focus before the first input drain.
     ui.invoke_init_focus();
+    // Force the text to a known-empty state: on kernels where freed Slint
+    // blocks are reused immediately, the fresh window's TextInput may carry
+    // stale heap content from a prior component. Clearing it keeps the
+    // KEYBOARD TEXT markers anchored to the first real keystroke.
+    ui.set_typed_text(String::new().into());
+    slint_platform::write_serial("DBG kbd: init done\n");
 
     let mut ok_emitted = false;
     let mut last_text = String::new();

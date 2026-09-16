@@ -138,7 +138,7 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
                 arch: "x64".into(),
                 smoke: true,
                 image_path: Some("build/ferric.img".into()),
-                smoke_timeout_sec: 120,
+                smoke_timeout_sec: 240,
             },
         )?;
         runner::run(
@@ -147,7 +147,7 @@ pub fn run(repo_root: &Path, args: CheckArgs) -> Result<(), String> {
                 arch: "arm64".into(),
                 smoke: true,
                 image_path: Some("build/ferric.img".into()),
-                smoke_timeout_sec: 120,
+                smoke_timeout_sec: 240,
             },
         )?;
     }

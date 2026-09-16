@@ -24,9 +24,12 @@ const KEYBOARD_SEL_MARKER: &str = "KEYBOARD SEL 0 1\n";
 const KEYBOARD_TEXT_TAPPED_MARKER: &str = "KEYBOARD TEXT ab1";
 const KEYBOARD_EXIT_MARKER: &str = "KEYBOARD EXIT OK";
 /// Stall watchdog for the smoke driver: re-sends a command whose effect has
-/// not shown up on serial within this window (a dropped key under a loaded
-/// runner would otherwise wedge the smoke forever).
-const RETRY_GRACE: Duration = Duration::from_secs(10);
+/// not shown up on serial within this window. The grace must exceed the
+/// slowest legitimate step under TCG (x86_64 keyboard-window construction can
+/// take ~30 s in a software-emulated VM); a shorter window makes the retry
+/// fire while the guest is still busy, merging the typed command into the
+/// shell (and, for `keyboard\r`, into the keyboard app's own TextInput).
+const RETRY_GRACE: Duration = Duration::from_secs(45);
 const MAX_ATTEMPTS: u32 = 3;
 /// Marker the `help` output carries, proving a typed command was dispatched.
 const HELP_RESPONSE_MARKER: &str = "power off";
@@ -100,7 +103,7 @@ pub struct RunArgs {
     #[arg(long)]
     pub image_path: Option<String>,
     /// Smoke timeout in seconds.
-    #[arg(long, default_value_t = 120)]
+    #[arg(long, default_value_t = 240)]
     pub smoke_timeout_sec: u64,
 }
 
@@ -390,8 +393,6 @@ fn run_with_injection(
             && attempts < MAX_ATTEMPTS
             && typed_at.elapsed() >= RETRY_GRACE
         {
-            send_input(qmp.as_mut(), write_side.as_mut(), "\r")?;
-            std::thread::sleep(Duration::from_millis(50));
             send_input(qmp.as_mut(), write_side.as_mut(), command)?;
             attempts += 1;
             typed_at = std::time::Instant::now();
