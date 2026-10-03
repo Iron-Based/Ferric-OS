@@ -12,7 +12,7 @@ ferric-k/    the kernel: crates/, boot/, targets/, fonts/, kernels/*.ld
 xtask/       cross-platform build/check/run harness (standalone crate)
 Cargo.toml   ONE cargo workspace: kernel crates + the empty Ferric-OS package
 rust-toolchain.toml    pinned nightly for the whole repo
-.github/     CI: cargo xtask bootstrap + cargo xtask check on push/PR
+.github/     CI: build + image job, then parallel x86_64/aarch64 smoke boots
 ```
 
 The root `Cargo.toml` is the single workspace for the kernel crates (under
@@ -82,6 +82,18 @@ tested on the host.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push to `main` and on pull requests:
-`cargo xtask bootstrap` provisions the toolchain and native deps, then
-`cargo xtask check` runs the full quality gate above.
+`.github/workflows/ci.yml` runs on every push to `main` and on pull requests,
+in two stages:
+
+- **build + image** — `cargo xtask bootstrap` provisions the toolchain and
+  native deps, `cargo xtask check --no-smoke` runs the quality gate above
+  minus the QEMU steps, then `cargo xtask build-image` assembles the disk
+  image and uploads it as an artifact.
+- **smoke boot** — a matrix over `x64` and `arm64` downloads that image and
+  runs `cargo xtask run --arch <arch> --smoke` on it, so both architectures
+  boot in parallel (`fail-fast: false`, so one arch's failure still reports
+  the other). Each leg uploads its serial log on failure.
+
+Toolchain, cargo registry, `ferric-k/third_party/` (Limine + staged edk2
+firmware) and build artifacts are cached, so only the first run after a
+change to them re-downloads or re-installs.

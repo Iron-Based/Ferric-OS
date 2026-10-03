@@ -9,12 +9,20 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-image:
-    name: Build Image
+  build:
+    name: build + image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4[cite: 1]
+        uses: actions/checkout@v4
+
+      - name: Cache pinned toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.rustup
+          key: ${{ runner.os }}-rustup-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-rustup-
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -22,9 +30,17 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}[cite: 1]
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-registry-[cite: 1]
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache bootstrap deps (Limine + edk2 firmware)
+        uses: actions/cache@v4
+        with:
+          path: ferric-k/third_party
+          key: ${{ runner.os }}-thirdparty-${{ hashFiles('xtask/src/bootstrap.rs') }}
+          restore-keys: |
+            ${{ runner.os }}-thirdparty-
 
       - name: Cache build artifacts
         uses: actions/cache@v4
@@ -32,38 +48,46 @@ jobs:
           path: |
             target
             xtask/target
-            ferric-k/third_party
-          key: ${{ runner.os }}-build-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('rust-toolchain.toml', 'xtask/src/bootstrap.rs') }}[cite: 1]
+          key: ${{ runner.os }}-build-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('rust-toolchain.toml') }}
           restore-keys: |
-            ${{ runner.os }}-build-[cite: 1]
+            ${{ runner.os }}-build-
 
-      - name: Bootstrap (toolchain + native deps + Limine)
-        run: cargo xtask bootstrap[cite: 1, 2]
+      - name: Bootstrap (toolchain + qemu + mtools + edk2 firmware + Limine)
+        run: cargo xtask bootstrap
 
-      - name: Rebuild kernel ELFs (x86_64 + aarch64)
-        run: cargo xtask build[cite: 2]
+      - name: Quality gate without QEMU (fmt, clippy, build, ELF/Limine, tests)
+        run: cargo xtask check --no-smoke
 
-      - name: Assemble dual-arch bootable disk image
-        run: cargo xtask build-image[cite: 2]
+      - name: Assemble dual-arch disk image
+        run: cargo xtask build-image
 
-      - name: Upload disk image artifact
+      - name: Upload disk image for the smoke jobs
         uses: actions/upload-artifact@v4
         with:
-          name: bootable-disk-image
-          path: build/
+          name: ferric-image
+          path: ferric-k/build/ferric.img
           retention-days: 1
 
-  test-qemu:
-    name: Test QEMU Boot (${{ matrix.arch }})
-    needs: build-image
+  smoke:
+    name: smoke boot (${{ matrix.arch }})
+    needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, arm64][cite: 2]
+        arch: [x64, arm64]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4[cite: 1]
+        uses: actions/checkout@v4
+
+      - name: Cache pinned toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.rustup
+          key: ${{ runner.os }}-rustup-${{ hashFiles('rust-toolchain.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-rustup-
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -71,29 +95,42 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml') }}[cite: 1]
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-registry-[cite: 1]
+            ${{ runner.os }}-cargo-registry-
 
-      - name: Cache build artifacts
+      - name: Cache bootstrap deps (Limine + edk2 firmware)
         uses: actions/cache@v4
         with:
-          path: |
-            target
-            xtask/target
-            ferric-k/third_party
-          key: ${{ runner.os }}-build-${{ hashFiles('**/Cargo.toml') }}-${{ hashFiles('rust-toolchain.toml', 'xtask/src/bootstrap.rs') }}[cite: 1]
+          path: ferric-k/third_party
+          key: ${{ runner.os }}-thirdparty-${{ hashFiles('xtask/src/bootstrap.rs') }}
           restore-keys: |
-            ${{ runner.os }}-build-[cite: 1]
+            ${{ runner.os }}-thirdparty-
 
-      - name: Bootstrap test environment dependencies
-        run: cargo xtask bootstrap[cite: 1, 2]
+      - name: Cache harness build
+        uses: actions/cache@v4
+        with:
+          path: xtask/target
+          key: ${{ runner.os }}-xtask-${{ matrix.arch }}-${{ hashFiles('xtask/Cargo.toml', 'xtask/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-xtask-${{ matrix.arch }}-
 
-      - name: Download disk image artifact
+      - name: Bootstrap (toolchain + qemu + edk2 firmware + Limine)
+        run: cargo xtask bootstrap
+
+      - name: Download disk image
         uses: actions/download-artifact@v4
         with:
-          name: bootable-disk-image
-          path: build/
+          name: ferric-image
+          path: ferric-k/build
 
-      - name: Boot in QEMU (${{ matrix.arch }})
-        run: cargo xtask run --arch ${{ matrix.arch }}[cite: 2]
+      - name: Smoke boot the image (${{ matrix.arch }})
+        run: cargo xtask run --arch ${{ matrix.arch }} --smoke --image-path ferric-k/build/ferric.img --smoke-timeout-sec 240
+
+      - name: Upload serial log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-serial-${{ matrix.arch }}
+          path: ferric-k/build/last-smoke-*.log
+          retention-days: 7
