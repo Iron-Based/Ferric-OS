@@ -1,10 +1,9 @@
 # Ferric-U
 
-the userland for ferric, placeholder.
+The userland for ferric.
 
-## info:
-uutils/coreutils for gpl utils replacenment
+## libc
 
-bsd utils to fill in where uutils/coreutils can't
-
-relibc for std and a proper C lib
+`libc/` is `libferric`, the freestanding Zig C library the kernel links statically. Its toolchain
+contract (Zig 0.16 flags, `compiler_rt` policy, no-`std` gate) is documented in
+[`libc/README.md`](libc/README.md#toolchain-contract).
